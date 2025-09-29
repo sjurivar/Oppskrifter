@@ -2,6 +2,14 @@
 
 En moderne webside for å organisere og håndtere dine oppskrifter, bygget med PHP og MySQL.
 
+[![GitHub release](https://img.shields.io/github/release/hjellum/oppskriftsamling.svg)](https://github.com/hjellum/oppskriftsamling/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-blue.svg)](https://php.net)
+
+## 🌟 Demo
+
+**Live Demo:** [https://hjellum.net/oppskrifter/](https://hjellum.net/oppskrifter/)
+
 ## ✨ Funksjoner
 
 - **📝 Oppskriftshåndtering**: Legg til, rediger og slett oppskrifter
@@ -71,7 +79,7 @@ CREATE TABLE recipes (
 
 1. **Klon prosjektet**
 ```bash
-git clone [repository-url]
+git clone https://github.com/hjellum/oppskriftsamling.git
 cd oppskriftsamling
 ```
 
