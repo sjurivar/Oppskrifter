@@ -1,17 +1,18 @@
-// Oppskriftshåndtering JavaScript
+// Oppskriftshåndtering JavaScript med PHP Backend
 
 class RecipeManager {
     constructor() {
-        this.recipes = this.loadRecipes();
+        this.recipes = [];
         this.currentFilter = 'all';
         this.editingRecipe = null;
+        this.apiUrl = 'api/recipes.php';
         this.init();
     }
 
-    init() {
+    async init() {
         this.bindEvents();
+        await this.loadRecipes();
         this.renderRecipes();
-        this.addSampleRecipes();
     }
 
     bindEvents() {
@@ -65,44 +66,21 @@ class RecipeManager {
         });
     }
 
-    addSampleRecipes() {
-        if (this.recipes.length === 0) {
-            const sampleRecipes = [
-                {
-                    id: Date.now() + 1,
-                    name: "Spaghetti Carbonara",
-                    category: "hovedrett",
-                    time: 20,
-                    servings: 4,
-                    ingredients: "400g spaghetti\n200g bacon\n4 egg\n100g parmesan\nSalt og pepper",
-                    instructions: "1. Kok pasta etter pakkens anvisning\n2. Stek bacon til det er sprøtt\n3. Pisk egg og parmesan sammen\n4. Bland alt sammen og server umiddelbart",
-                    image: "https://images.unsplash.com/photo-1621996346565-e3dbc353d2e5?w=400&h=300&fit=crop"
-                },
-                {
-                    id: Date.now() + 2,
-                    name: "Chokoladekake",
-                    category: "dessert",
-                    time: 60,
-                    servings: 8,
-                    ingredients: "200g smør\n200g sukker\n4 egg\n200g mel\n50g kakao\n1 ts bakepulver",
-                    instructions: "1. Pisk smør og sukker hvitt\n2. Tilsett egg en om gangen\n3. Bland inn tørre ingredienser\n4. Stek på 175°C i 30-35 min",
-                    image: "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&h=300&fit=crop"
-                },
-                {
-                    id: Date.now() + 3,
-                    name: "Caesar Salat",
-                    category: "forrett",
-                    time: 15,
-                    servings: 4,
-                    ingredients: "1 hode romansalat\n100g parmesan\n50g croutons\nCaesar dressing\nAnchovies (valgfritt)",
-                    instructions: "1. Riv salat i biter\n2. Bland med dressing\n3. Topp med parmesan og croutons\n4. Server umiddelbart",
-                    image: "https://images.unsplash.com/photo-1546793665-c74683f339c1?w=400&h=300&fit=crop"
-                }
-            ];
-
-            this.recipes = sampleRecipes;
-            this.saveRecipes();
-            this.renderRecipes();
+    async loadRecipes() {
+        try {
+            const response = await fetch(this.apiUrl);
+            const result = await response.json();
+            
+            if (result.success) {
+                this.recipes = result.data;
+            } else {
+                this.showError('Kunne ikke laste oppskrifter: ' + result.message);
+                this.recipes = [];
+            }
+        } catch (error) {
+            console.error('Feil ved lasting av oppskrifter:', error);
+            this.showError('Feil ved tilkobling til server');
+            this.recipes = [];
         }
     }
 
@@ -155,11 +133,10 @@ class RecipeManager {
         document.getElementById('recipeServings').value = recipe.servings;
         document.getElementById('recipeIngredients').value = recipe.ingredients;
         document.getElementById('recipeInstructions').value = recipe.instructions;
-        document.getElementById('recipeImage').value = recipe.image || '';
+        document.getElementById('recipeImage').value = recipe.image_url || '';
     }
 
-    saveRecipe() {
-        const formData = new FormData(document.getElementById('recipeForm'));
+    async saveRecipe() {
         const recipeData = {
             name: document.getElementById('recipeName').value,
             category: document.getElementById('recipeCategory').value,
@@ -167,22 +144,46 @@ class RecipeManager {
             servings: parseInt(document.getElementById('recipeServings').value),
             ingredients: document.getElementById('recipeIngredients').value,
             instructions: document.getElementById('recipeInstructions').value,
-            image: document.getElementById('recipeImage').value || 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&h=300&fit=crop'
+            image_url: document.getElementById('recipeImage').value || 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&h=300&fit=crop'
         };
 
-        if (this.editingRecipe) {
-            // Rediger eksisterende oppskrift
-            const index = this.recipes.findIndex(r => r.id === this.editingRecipe.id);
-            this.recipes[index] = { ...recipeData, id: this.editingRecipe.id };
-        } else {
-            // Legg til ny oppskrift
-            recipeData.id = Date.now();
-            this.recipes.unshift(recipeData);
-        }
+        try {
+            let response;
+            if (this.editingRecipe) {
+                // Oppdater eksisterende oppskrift
+                recipeData.id = this.editingRecipe.id;
+                response = await fetch(this.apiUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(recipeData)
+                });
+            } else {
+                // Opprett ny oppskrift
+                response = await fetch(this.apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(recipeData)
+                });
+            }
 
-        this.saveRecipes();
-        this.renderRecipes();
-        this.closeModal();
+            const result = await response.json();
+            
+            if (result.success) {
+                await this.loadRecipes();
+                this.renderRecipes();
+                this.closeModal();
+                this.showSuccess(result.message);
+            } else {
+                this.showError(result.message);
+            }
+        } catch (error) {
+            console.error('Feil ved lagring av oppskrift:', error);
+            this.showError('Feil ved lagring av oppskrift');
+        }
     }
 
     deleteRecipe(id) {
