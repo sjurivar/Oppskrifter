@@ -186,11 +186,26 @@ class RecipeManager {
         }
     }
 
-    deleteRecipe(id) {
+    async deleteRecipe(id) {
         if (confirm('Er du sikker på at du vil slette denne oppskriften?')) {
-            this.recipes = this.recipes.filter(recipe => recipe.id !== id);
-            this.saveRecipes();
-            this.renderRecipes();
+            try {
+                const response = await fetch(`${this.apiUrl}?id=${id}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    await this.loadRecipes();
+                    this.renderRecipes();
+                    this.showSuccess(result.message);
+                } else {
+                    this.showError(result.message);
+                }
+            } catch (error) {
+                console.error('Feil ved sletting av oppskrift:', error);
+                this.showError('Feil ved sletting av oppskrift');
+            }
         }
     }
 
@@ -202,27 +217,31 @@ class RecipeManager {
         document.querySelector(`[data-category="${category}"]`).classList.add('active');
     }
 
-    filterRecipes(searchTerm = '') {
-        let filteredRecipes = this.recipes;
-
-        // Filtrer etter kategori
-        if (this.currentFilter !== 'all') {
-            filteredRecipes = filteredRecipes.filter(recipe => 
-                recipe.category === this.currentFilter
-            );
+    async filterRecipes(searchTerm = '') {
+        try {
+            const params = new URLSearchParams();
+            if (searchTerm.trim()) {
+                params.append('search', searchTerm);
+            }
+            if (this.currentFilter !== 'all') {
+                params.append('category', this.currentFilter);
+            }
+            
+            const url = `${this.apiUrl}?${params.toString()}`;
+            const response = await fetch(url);
+            const result = await response.json();
+            
+            if (result.success) {
+                this.renderRecipes(result.data);
+            } else {
+                this.showError('Kunne ikke laste oppskrifter: ' + result.message);
+                this.renderRecipes([]);
+            }
+        } catch (error) {
+            console.error('Feil ved filtrering av oppskrifter:', error);
+            this.showError('Feil ved søk');
+            this.renderRecipes([]);
         }
-
-        // Filtrer etter søketerm
-        if (searchTerm.trim()) {
-            const term = searchTerm.toLowerCase();
-            filteredRecipes = filteredRecipes.filter(recipe => 
-                recipe.name.toLowerCase().includes(term) ||
-                recipe.ingredients.toLowerCase().includes(term) ||
-                recipe.instructions.toLowerCase().includes(term)
-            );
-        }
-
-        this.renderRecipes(filteredRecipes);
     }
 
     renderRecipes(recipesToRender = null) {
@@ -257,7 +276,7 @@ class RecipeManager {
 
         return `
             <div class="recipe-card" data-id="${recipe.id}">
-                <img src="${recipe.image}" alt="${recipe.name}" class="recipe-image" 
+                <img src="${recipe.image_url}" alt="${recipe.name}" class="recipe-image" 
                      onerror="this.src='https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&h=300&fit=crop'">
                 <div class="recipe-content">
                     <h3 class="recipe-title">${recipe.name}</h3>
@@ -295,7 +314,7 @@ class RecipeManager {
             .join('');
 
         return `
-            <img src="${recipe.image}" alt="${recipe.name}" class="recipe-detail-image"
+            <img src="${recipe.image_url}" alt="${recipe.name}" class="recipe-detail-image"
                  onerror="this.src='https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&h=300&fit=crop'">
             
             <div class="recipe-detail-meta">
@@ -369,22 +388,53 @@ class RecipeManager {
         });
     }
 
-    loadRecipes() {
-        try {
-            const saved = localStorage.getItem('recipes');
-            return saved ? JSON.parse(saved) : [];
-        } catch (error) {
-            console.error('Feil ved lasting av oppskrifter:', error);
-            return [];
-        }
+    showSuccess(message) {
+        this.showMessage(message, 'success');
     }
 
-    saveRecipes() {
-        try {
-            localStorage.setItem('recipes', JSON.stringify(this.recipes));
-        } catch (error) {
-            console.error('Feil ved lagring av oppskrifter:', error);
+    showError(message) {
+        this.showMessage(message, 'error');
+    }
+
+    showMessage(message, type = 'info') {
+        // Fjern eksisterende meldinger
+        const existingMessage = document.querySelector('.message-toast');
+        if (existingMessage) {
+            existingMessage.remove();
         }
+
+        // Opprett ny melding
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message-toast message-${type}`;
+        messageDiv.innerHTML = `
+            <div class="message-content">
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                <span>${message}</span>
+            </div>
+        `;
+
+        // Legg til stil
+        messageDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${type === 'success' ? '#27ae60' : type === 'error' ? '#e74c3c' : '#3498db'};
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 10000;
+            animation: slideInRight 0.3s ease;
+            max-width: 300px;
+        `;
+
+        document.body.appendChild(messageDiv);
+
+        // Fjern melding etter 5 sekunder
+        setTimeout(() => {
+            messageDiv.style.animation = 'slideOutRight 0.3s ease';
+            setTimeout(() => messageDiv.remove(), 300);
+        }, 5000);
     }
 }
 
