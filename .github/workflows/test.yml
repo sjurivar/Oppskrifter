@@ -1,0 +1,127 @@
+name: Test and Validate
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        php-version: [7.4, 8.0, 8.1, 8.2]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup PHP ${{ matrix.php-version }}
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ matrix.php-version }}
+        extensions: pdo, pdo_mysql, mbstring
+        coverage: none
+    
+    - name: Validate composer.json
+      run: |
+        if [ -f "composer.json" ]; then
+          composer validate --strict
+        else
+          echo "No composer.json found, skipping validation"
+        fi
+    
+    - name: Check PHP syntax
+      run: |
+        echo "🔍 Checking PHP syntax for version ${{ matrix.php-version }}..."
+        find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \;
+        echo "✅ PHP syntax check passed"
+    
+    - name: Test database configuration class
+      run: |
+        echo "🧪 Testing database configuration..."
+        php -r "
+        require_once 'config/database.production.php';
+        \$db = new Database();
+        echo 'Database class loaded successfully\n';
+        echo 'Configuration: ' . \$db->host . ' / ' . \$db->db_name . '\n';
+        "
+    
+    - name: Validate HTML
+      run: |
+        echo "🔍 Validating HTML structure..."
+        if command -v tidy &> /dev/null; then
+          tidy -q -e index.html || echo "⚠️ HTML validation warnings (non-critical)"
+        else
+          echo "HTML Tidy not available, skipping validation"
+        fi
+    
+    - name: Check file structure
+      run: |
+        echo "📁 Checking required files..."
+        required_files=(
+          "index.html"
+          "styles.css" 
+          "script.js"
+          ".htaccess"
+          "config/database.production.php"
+          "models/Recipe.php"
+          "api/recipes.php"
+          "database/schema.sql"
+        )
+        
+        for file in "${required_files[@]}"; do
+          if [ -f "$file" ]; then
+            echo "✅ $file"
+          else
+            echo "❌ $file (missing)"
+            exit 1
+          fi
+        done
+        
+        echo "✅ All required files present"
+    
+    - name: Test deployment preparation
+      run: |
+        echo "📦 Testing deployment file preparation..."
+        
+        # Simuler deployment-forberedelse
+        mkdir -p test-deploy
+        cp index.html test-deploy/
+        cp styles.css test-deploy/
+        cp script.js test-deploy/
+        cp .htaccess test-deploy/
+        
+        mkdir -p test-deploy/{config,models,api,database}
+        cp config/database.production.php test-deploy/config/database.php
+        cp models/Recipe.php test-deploy/models/
+        cp api/recipes.php test-deploy/api/
+        cp database/schema.sql test-deploy/database/
+        
+        echo "📋 Deployment files prepared:"
+        find test-deploy/ -type f | sort
+        
+        # Rydd opp
+        rm -rf test-deploy/
+        
+        echo "✅ Deployment preparation test passed"
+    
+    - name: Generate test report
+      if: always()
+      run: |
+        echo "## 🧪 Test Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**PHP Version:** ${{ matrix.php-version }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "### ✅ Status: PASSED" >> $GITHUB_STEP_SUMMARY
+          echo "All tests completed successfully!" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### ❌ Status: FAILED" >> $GITHUB_STEP_SUMMARY
+          echo "Some tests failed. Check the logs above." >> $GITHUB_STEP_SUMMARY
+        fi

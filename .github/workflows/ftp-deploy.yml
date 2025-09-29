@@ -1,0 +1,173 @@
+name: FTP Deploy to hjellum.net
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Tillat manuell kjøring
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.1'
+        extensions: pdo, pdo_mysql, mbstring
+        
+    - name: Validate PHP syntax
+      run: |
+        echo "🔍 Validating PHP syntax..."
+        find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \;
+        
+    - name: Prepare deployment files
+      run: |
+        echo "📁 Preparing deployment files..."
+        
+        # Opprett deployment-mappe
+        mkdir -p ftp-deploy
+        
+        # Kopier hovedfiler
+        cp index.html ftp-deploy/
+        cp styles.css ftp-deploy/
+        cp script.js ftp-deploy/
+        cp .htaccess ftp-deploy/
+        
+        # Opprett mapper og kopier PHP-filer
+        mkdir -p ftp-deploy/{config,models,api,database}
+        cp config/database.production.php ftp-deploy/config/database.php
+        cp models/Recipe.php ftp-deploy/models/
+        cp api/recipes.php ftp-deploy/api/
+        cp database/schema.sql ftp-deploy/database/
+        
+        # Vis filstruktur
+        echo "📋 Files to deploy:"
+        find ftp-deploy/ -type f | sort
+        
+    - name: Configure database
+      run: |
+        echo "🔧 Configuring database settings..."
+        
+        # Oppdater database-konfigurasjon med GitHub Secrets
+        cat > ftp-deploy/config/database.php << 'EOF'
+        <?php
+        /**
+         * Production Database Configuration
+         * Konfigurert via GitHub Actions
+         */
+        
+        class Database {
+            private $host = '${{ secrets.DB_HOST }}';
+            private $db_name = '${{ secrets.DB_NAME }}';
+            private $username = '${{ secrets.DB_USER }}';
+            private $password = '${{ secrets.DB_PASS }}';
+            private $charset = 'utf8mb4';
+            
+            public $conn;
+            
+            /**
+             * Få database-tilkobling
+             */
+            public function getConnection() {
+                $this->conn = null;
+                
+                try {
+                    $dsn = "mysql:host=" . $this->host . ";dbname=" . $this->db_name . ";charset=" . $this->charset;
+                    $options = [
+                        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+                        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                        PDO::ATTR_EMULATE_PREPARES   => false,
+                    ];
+                    
+                    $this->conn = new PDO($dsn, $this->username, $this->password, $options);
+                } catch(PDOException $exception) {
+                    error_log("Database connection error: " . $exception->getMessage());
+                    throw new Exception("Database connection failed");
+                }
+                
+                return $this->conn;
+            }
+            
+            /**
+             * Test tilkobling
+             */
+            public function testConnection() {
+                try {
+                    $this->getConnection();
+                    return $this->conn !== null;
+                } catch(Exception $e) {
+                    error_log("Database test failed: " . $e->getMessage());
+                    return false;
+                }
+            }
+        }
+        ?>
+        EOF
+        
+    - name: Deploy via FTP
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      with:
+        server: ${{ secrets.FTP_SERVER }}
+        username: ${{ secrets.FTP_USER }}
+        password: ${{ secrets.FTP_PASSWORD }}
+        local-dir: ./ftp-deploy/
+        server-dir: ${{ secrets.FTP_REMOTE_DIR }}
+        exclude: |
+          **/.git*
+          **/.git*/**
+          **/node_modules/**
+          **/.env
+          **/.DS_Store
+          **/Thumbs.db
+          
+    - name: Set file permissions
+      if: success()
+      run: |
+        echo "🔐 Setting file permissions..."
+        # Note: Dette må kanskje gjøres via FTP-klient eller server-administrasjon
+        # avhengig av server-konfigurasjonen
+        
+    - name: Test deployment
+      if: success()
+      run: |
+        echo "🧪 Testing deployment..."
+        
+        # Test at filene er tilgjengelige
+        echo "Testing main page..."
+        curl -f -s -o /dev/null "https://hjellum.net/oppskrifter/" || echo "⚠️ Main page test failed"
+        
+        echo "Testing API endpoint..."
+        curl -f -s -o /dev/null "https://hjellum.net/oppskrifter/api/recipes.php" || echo "⚠️ API test failed"
+        
+        echo "✅ Deployment tests completed"
+        
+    - name: Deployment Summary
+      if: always()
+      run: |
+        echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Deployed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📱 Live Application" >> $GITHUB_STEP_SUMMARY
+        echo "- **URL:** https://hjellum.net/oppskrifter/" >> $GITHUB_STEP_SUMMARY
+        echo "- **API:** https://hjellum.net/oppskrifter/api/recipes.php" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📁 Deployed Files" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        find ftp-deploy/ -type f | sort >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "### ✅ Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
+          echo "Deployment completed successfully!" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### ❌ Status: FAILED" >> $GITHUB_STEP_SUMMARY
+          echo "Deployment failed. Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+        fi

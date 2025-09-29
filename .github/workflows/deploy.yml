@@ -1,10 +1,7 @@
-name: Deploy to hjellum.net
+name: Legacy Deploy (Not Used)
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch: # Only manual runs
 
 jobs:
   test:
